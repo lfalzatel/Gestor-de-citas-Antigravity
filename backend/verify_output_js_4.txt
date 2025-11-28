@@ -1,0 +1,39 @@
+Starting Backend Verification...
+
+1. Testing Registration...
+Register Status: 201
+User Registered: {
+  token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIzYmIwZjJkNC1jNGQ5LTQ2MGEtYjQ2Yi1kNzFhZmEwMzZlYmQiLCJyb2xlIjoiQ0xJRU5UIiwiaWF0IjoxNzYzOTkyNTk2LCJleHAiOjE3NjQ1OTczOTZ9.ba4MRbZyzd8CMTxDYTOO1tlLffjoXa5EE1iiH6nmnVs',
+  user: {
+    id: '3bb0f2d4-c4d9-460a-b46b-d71afa036ebd',
+    email: 'test1763992596744@example.com',
+    name: 'Test User',
+    role: 'CLIENT'
+  }
+}
+
+2. Testing Login...
+Login Status: 200
+Token received
+
+3. Testing Create Business...
+Create Business Status: 201
+Business Created: 0a4363b7-ec60-4590-8129-e44e3423f301
+
+4. Testing Create Service...
+Create Service Status: 201
+Service Created: 07db2dd2-6096-4d07-b626-dfe405140285
+
+5. Testing List Businesses...
+List Businesses Status: 200
+Businesses Found: 2
+
+6. Testing Book Appointment...
+Book Appointment Status: 201
+Appointment Booked: 47a359b7-0219-40b2-95f4-01cac369cb69
+
+7. Testing List My Appointments...
+List My Appointments Status: 200
+Appointments Found: 1
+
+Verification Complete!

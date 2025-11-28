@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  name            String
+  telefono        String?   // Optional phone number
+  fechaNacimiento DateTime? // Optional birth date
+  direccion       String?   // Optional address
+  avatarUrl       String?   // Optional profile picture URL (for future use)
+  role            String    @default("ADMIN") // ADMIN only for system users
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  employeeProfile Employee?
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  nombre    String
+  apellido  String
+  email     String   @unique
+  telefono  String
+  notas     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  appointments Appointment[]
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  nombre      String
+  descripcion String?
+  categoria   String   // e.g., "Manicura", "Pedicura", "Uñas Acrílicas"
+  duracion    Int      // In minutes
+  precio      Float
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  appointments Appointment[]
+}
+
+model Employee {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  nombre            String
+  apellido          String
+  email             String   @unique
+  telefono          String
+  direccion         String?
+  fechaNacimiento   DateTime? // Birth date for age calculation
+  fechaContratacion DateTime
+  especialidad      String?
+  activo            Boolean  @default(true)
+  fechaDesactivacion DateTime? // Date and time when employee was deactivated
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id])
+  appointments Appointment[]
+}
+
+model Appointment {
+  id         String   @id @default(uuid())
+  clienteId  String
+  servicioId String
+  empleadoId String?
+  fecha      DateTime
+  horaInicio String   // HH:MM format
+  horaFin    String?  // HH:MM format (calculated from service duration)
+  estado     String   @default("PROGRAMADA") // PROGRAMADA, CONFIRMADA, COMPLETADA, CANCELADA, NO ASISTIÓ
+  notas      String?
+  total      Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  cliente  Client    @relation(fields: [clienteId], references: [id])
+  servicio Service   @relation(fields: [servicioId], references: [id])
+  empleado Employee? @relation(fields: [empleadoId], references: [id])
+
+  @@map("citas")
+}
