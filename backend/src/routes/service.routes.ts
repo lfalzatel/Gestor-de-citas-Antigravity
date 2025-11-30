@@ -69,13 +69,51 @@ router.get('/', async (req, res) => {
             }
         });
 
-        // Add appointmentCount to each service
+        // Add appointmentCount and status text to each service
         const servicesWithCount = services.map(service => ({
             ...service,
-            appointmentCount: service._count.appointments
+            appointmentCount: service._count.appointments,
+            statusText: service.activo ? '✅ Activo' : '❌ Inactivo'
         }));
 
         res.json(servicesWithCount);
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get services for dropdown (simplified view)
+router.get('/dropdown', async (req, res) => {
+    try {
+        const services = await prisma.service.findMany({
+            // Show ALL services
+            select: {
+                id: true,
+                nombre: true,
+                precio: true,
+                // We need appointment count to calculate active status dynamically
+                _count: {
+                    select: {
+                        appointments: {
+                            where: {
+                                estado: { in: ['PROGRAMADA', 'COMPLETADA'] }
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: { nombre: 'asc' }
+        });
+
+        // Format for dropdown display
+        const formattedServices = services.map(service => ({
+            id: service.id,
+            nombre: service.nombre,
+            precio: service.precio,
+            activo: service._count.appointments > 0
+        }));
+
+        res.json(formattedServices);
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
     }
@@ -86,7 +124,15 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const service = await prisma.service.findUnique({
-            where: { id }
+            where: { id },
+            include: {
+                appointments: {
+                    include: {
+                        cliente: true,
+                        empleado: true
+                    }
+                }
+            }
         });
 
         if (!service) {

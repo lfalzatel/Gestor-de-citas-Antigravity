@@ -11,8 +11,9 @@ router.get('/appointments', authenticateToken, async (req, res) => {
         const year = req.query.year ? parseInt(req.query.year as string) : now.getFullYear();
         const month = req.query.month ? parseInt(req.query.month as string) : now.getMonth(); // 0-indexed
 
-        const firstDayOfMonth = new Date(year, month, 1);
-        const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+        // Create dates in UTC to ensure we cover the full month regardless of server timezone
+        const firstDayOfMonth = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+        const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
 
         const appointments = await prisma.appointment.findMany({
             where: {
@@ -27,22 +28,33 @@ router.get('/appointments', authenticateToken, async (req, res) => {
         });
 
         // Group by status
-        const statusCounts: Record<string, number> = {};
+        const statusCounts: Record<string, number> = {
+            'COMPLETADA': 0,
+            'PROGRAMADA': 0,
+            'CANCELADA': 0,
+            'NO_ASISTIO': 0
+        };
         let totalRevenue = 0;
 
         appointments.forEach(apt => {
-            statusCounts[apt.estado] = (statusCounts[apt.estado] || 0) + 1;
+            const estado = apt.estado === 'NO ASISTIÓ' ? 'NO_ASISTIO' : apt.estado;
+            if (statusCounts.hasOwnProperty(estado)) {
+                statusCounts[estado]++;
+            }
             if (apt.estado === 'COMPLETADA' && apt.servicio?.precio) {
                 totalRevenue += Number(apt.servicio.precio);
             }
         });
 
         const total = appointments.length;
-        const stats = Object.entries(statusCounts).map(([estado, count]) => ({
-            estado,
-            count,
-            percentage: total > 0 ? ((count / total) * 100).toFixed(1) : '0.0'
-        }));
+        const stats = Object.keys(statusCounts).map(estado => {
+            const count = statusCounts[estado];
+            return {
+                estado: estado === 'NO_ASISTIO' ? 'NO ASISTIÓ' : estado,
+                count,
+                percentage: total > 0 ? ((count / total) * 100).toFixed(1) : '0.0'
+            };
+        });
 
         res.json({ total, stats, totalRevenue });
     } catch (error) {

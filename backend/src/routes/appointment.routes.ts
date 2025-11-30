@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { sendEmail, emailTemplates } from '../services/email.service';
+import { sendSMS, smsTemplates } from '../services/sms.service';
+import { generateAppointmentICal } from '../services/calendar.service';
 
 const router = Router();
 
@@ -61,6 +64,50 @@ router.post('/', authenticateToken, async (req: any, res) => {
                 empleado: true
             }
         });
+
+        // Send email notification with calendar attachment
+        const appointmentDate = new Date(fecha).toLocaleDateString('es-ES', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+
+        const emailTemplate = emailTemplates.newAppointment(
+            `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+            appointmentDate,
+            `${horaInicio} - ${horaFin}`,
+            service.nombre
+        );
+
+        // Generate iCal attachment
+        const icalAttachment = generateAppointmentICal(
+            `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+            service.nombre,
+            new Date(fecha),
+            horaInicio,
+            horaFin
+        );
+
+        // Send email with calendar attachment asynchronously (don't wait for it)
+        sendEmail(appointment.cliente.email, emailTemplate, [icalAttachment]).catch(err =>
+            console.error('Failed to send email:', err)
+        );
+
+        // Send SMS notification if client has phone number
+        if (appointment.cliente.telefono) {
+            const smsTemplate = smsTemplates.newAppointment(
+                `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                appointmentDate,
+                `${horaInicio} - ${horaFin}`,
+                service.nombre
+            );
+
+            // Send SMS asynchronously (don't wait for it)
+            sendSMS(appointment.cliente.telefono, smsTemplate).catch(err =>
+                console.error('Failed to send SMS:', err)
+            );
+        }
 
         res.status(201).json(appointment);
     } catch (error) {
@@ -193,6 +240,90 @@ router.put('/:id', authenticateToken, async (req: any, res) => {
                 empleado: true
             }
         });
+
+        // Send notifications if important fields changed
+        const importantFieldsChanged = data.fecha || data.horaInicio || data.servicioId || data.estado;
+
+        if (importantFieldsChanged) {
+            // Get updated service info if service changed
+            const service = data.servicioId
+                ? await prisma.service.findUnique({ where: { id: data.servicioId } })
+                : appointment.servicio;
+
+            if (!service) {
+                return res.status(404).json({ error: 'Servicio no encontrado' });
+            }
+
+            const appointmentDate = new Date(appointment.fecha).toLocaleDateString('es-ES', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            });
+
+            // Choose appropriate template based on status change
+            let emailTemplate;
+            let smsTemplate;
+
+            if (data.estado && data.estado !== 'PROGRAMADA') {
+                // Status change notification
+                emailTemplate = emailTemplates.statusChange(
+                    `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                    data.estado === 'NO ASISTIÓ' ? 'No Asistió' : data.estado,
+                    appointmentDate,
+                    `${appointment.horaInicio} - ${appointment.horaFin || 'N/A'}`,
+                    service.nombre
+                );
+
+                smsTemplate = smsTemplates.statusChange(
+                    `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                    data.estado === 'NO ASISTIÓ' ? 'No Asistió' : data.estado,
+                    appointmentDate,
+                    `${appointment.horaInicio} - ${appointment.horaFin || 'N/A'}`,
+                    service.nombre
+                );
+            } else {
+                // Regular update notification (date/time/service changed)
+                emailTemplate = emailTemplates.newAppointment(
+                    `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                    appointmentDate,
+                    `${appointment.horaInicio} - ${appointment.horaFin || 'N/A'}`,
+                    service.nombre
+                );
+
+                smsTemplate = smsTemplates.newAppointment(
+                    `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                    appointmentDate,
+                    `${appointment.horaInicio} - ${appointment.horaFin || 'N/A'}`,
+                    service.nombre
+                );
+            }
+
+            // Generate iCal attachment for updates too (only if we have end time)
+            let icalAttachment;
+            if (appointment.horaFin) {
+                icalAttachment = generateAppointmentICal(
+                    `${appointment.cliente.nombre} ${appointment.cliente.apellido}`,
+                    service.nombre,
+                    new Date(appointment.fecha),
+                    appointment.horaInicio,
+                    appointment.horaFin
+                );
+            }
+
+            // Send email with calendar attachment asynchronously (if available)
+            const attachments = icalAttachment ? [icalAttachment] : [];
+            sendEmail(appointment.cliente.email, emailTemplate, attachments).catch(err =>
+                console.error('Failed to send email:', err)
+            );
+
+            // Send SMS notification if client has phone number
+            if (appointment.cliente.telefono) {
+                sendSMS(appointment.cliente.telefono, smsTemplate).catch(err =>
+                    console.error('Failed to send SMS:', err)
+                );
+            }
+        }
 
         res.json(appointment);
     } catch (error) {

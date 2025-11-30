@@ -12,6 +12,7 @@ const createEmployeeSchema = z.object({
     email: z.string().email(),
     telefono: z.string().min(7),
     direccion: z.string().optional(),
+    fechaNacimiento: z.string().datetime().optional().nullable(),
     fechaContratacion: z.string().datetime(),
     especialidad: z.string().optional(),
     activo: z.boolean().default(true),
@@ -24,6 +25,7 @@ const updateEmployeeSchema = z.object({
     email: z.string().email().optional(),
     telefono: z.string().min(7).optional(),
     direccion: z.string().optional(),
+    fechaNacimiento: z.string().datetime().optional().nullable(),
     fechaContratacion: z.string().datetime().optional(),
     especialidad: z.string().optional(),
     activo: z.boolean().optional(),
@@ -50,6 +52,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
             data: {
                 ...employeeData,
                 userId: user.id,
+                fechaNacimiento: employeeData.fechaNacimiento ? new Date(employeeData.fechaNacimiento) : null,
                 fechaContratacion: new Date(fechaContratacion)
             },
             include: {
@@ -77,7 +80,43 @@ router.get('/', authenticateToken, async (req, res) => {
             orderBy: { createdAt: 'desc' }
         });
 
-        res.json(employees);
+        // Add status text for display
+        const employeesWithStatus = employees.map(employee => ({
+            ...employee,
+            statusText: employee.activo ? '✅ Activo' : '❌ Inactivo'
+        }));
+
+        res.json(employeesWithStatus);
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get employees for dropdown (simplified view)
+router.get('/dropdown', authenticateToken, async (req, res) => {
+    try {
+        const employees = await prisma.employee.findMany({
+            // Show ALL employees (active and inactive)
+            select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+                especialidad: true,
+                activo: true
+            },
+            orderBy: { nombre: 'asc' }
+        });
+
+        // Format for dropdown display
+        const formattedEmployees = employees.map(employee => ({
+            id: employee.id,
+            nombre: employee.nombre,
+            apellido: employee.apellido,
+            especialidad: employee.especialidad,
+            activo: employee.activo
+        }));
+
+        res.json(formattedEmployees);
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
     }
@@ -114,11 +153,14 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req: any, res) => {
     try {
         const { id } = req.params;
-        const { fechaContratacion, ...data } = updateEmployeeSchema.parse(req.body);
+        const { fechaContratacion, fechaNacimiento, ...data } = updateEmployeeSchema.parse(req.body);
 
         const updateData: any = { ...data };
         if (fechaContratacion) {
             updateData.fechaContratacion = new Date(fechaContratacion);
+        }
+        if (fechaNacimiento !== undefined) {
+            updateData.fechaNacimiento = fechaNacimiento ? new Date(fechaNacimiento) : null;
         }
 
         // Check if active status is changing

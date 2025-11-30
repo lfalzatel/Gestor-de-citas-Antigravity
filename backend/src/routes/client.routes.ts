@@ -10,6 +10,8 @@ const createClientSchema = z.object({
     apellido: z.string().min(2),
     email: z.string().email(),
     telefono: z.string().min(7),
+    direccion: z.string().optional(),
+    fechaNacimiento: z.string().datetime().optional().nullable(),
     notas: z.string().optional(),
 });
 
@@ -18,6 +20,8 @@ const updateClientSchema = z.object({
     apellido: z.string().min(2).optional(),
     email: z.string().email().optional(),
     telefono: z.string().min(7).optional(),
+    direccion: z.string().optional(),
+    fechaNacimiento: z.string().datetime().optional().nullable(),
     notas: z.string().optional(),
 });
 
@@ -35,7 +39,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
         if (error instanceof z.ZodError) {
             return res.status(400).json({ error: error.errors });
         }
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
     }
 });
 
@@ -54,9 +58,66 @@ router.get('/', authenticateToken, async (req, res) => {
                 }
             }
         });
-        res.json(clients);
+
+        // Add status text for display
+        const clientsWithStatus = clients.map(client => ({
+            ...client,
+            statusText: client.activo ? '✅ Activo' : '❌ Inactivo'
+        }));
+
+        res.json(clientsWithStatus);
     } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
+    }
+});
+
+// Get clients for dropdown (simplified view)
+router.get('/dropdown', authenticateToken, async (req, res) => {
+    try {
+        const clients = await prisma.client.findMany({
+            // Show all clients
+            select: {
+                id: true,
+                nombre: true,
+                apellido: true,
+                notas: true,
+                // We need appointments to calculate active status dynamically
+                appointments: {
+                    where: {
+                        estado: { in: ['PROGRAMADA', 'COMPLETADA'] }
+                    },
+                    orderBy: { fecha: 'desc' },
+                    take: 1,
+                    select: { fecha: true }
+                }
+            },
+            orderBy: { nombre: 'asc' }
+        });
+
+        const now = new Date();
+        const TWENTY_DAYS_MS = 20 * 24 * 60 * 60 * 1000;
+
+        // Format for dropdown display
+        const formattedClients = clients.map(client => {
+            let isActive = false;
+            if (client.appointments.length > 0) {
+                const lastAppointmentDate = new Date(client.appointments[0].fecha);
+                const timeDiff = now.getTime() - lastAppointmentDate.getTime();
+                isActive = timeDiff <= TWENTY_DAYS_MS;
+            }
+
+            return {
+                id: client.id,
+                nombre: client.nombre,
+                apellido: client.apellido,
+                notas: client.notas,
+                activo: isActive
+            };
+        });
+
+        res.json(formattedClients);
+    } catch (error) {
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
     }
 });
 
@@ -82,7 +143,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
         res.json(client);
     } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
     }
 });
 
@@ -90,11 +151,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req: any, res) => {
     try {
         const { id } = req.params;
-        const data = updateClientSchema.parse(req.body);
+        const { fechaNacimiento, ...data } = updateClientSchema.parse(req.body);
+
+        const updateData: any = { ...data };
+        if (fechaNacimiento !== undefined) {
+            updateData.fechaNacimiento = fechaNacimiento ? new Date(fechaNacimiento) : null;
+        }
 
         const client = await prisma.client.update({
             where: { id },
-            data
+            data: updateData
         });
 
         res.json(client);
@@ -102,7 +168,7 @@ router.put('/:id', authenticateToken, async (req: any, res) => {
         if (error instanceof z.ZodError) {
             return res.status(400).json({ error: error.errors });
         }
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
     }
 });
 
@@ -117,7 +183,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
         res.json({ message: 'Cliente eliminado correctamente' });
     } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: (error as any).message || 'Internal server error' });
     }
 });
 
